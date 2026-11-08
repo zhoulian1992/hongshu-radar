@@ -22,7 +22,7 @@
 ## 快速开始
 
 ```bash
-git clone <本仓库地址>
+git clone https://github.com/zhoulian1992/hongshu-radar.git
 cd hongshu-radar
 
 # 1) 本机配置（config.json 含 webhook，已在 .gitignore 中，请勿提交）
