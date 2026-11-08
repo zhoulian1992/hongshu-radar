@@ -1,0 +1,17 @@
+{
+  "host": "127.0.0.1",
+  "port": 8777,
+  "db_path": "data/radar.db",
+  "interval_minutes": 60,
+  "open_browser": true,
+  "default_source": "demo",
+  "fetch_command": "",
+  "min_wait": 0.1,
+  "max_wait": 0.3,
+  "demo_mode": true,
+  "notify": {
+    "enabled": false,
+    "type": "wecom",
+    "webhook": ""
+  }
+}

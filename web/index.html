@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>红薯雷达 · 本地选品监控工作台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">薯</span>
+    <div>
+      <h1>红薯雷达</h1>
+      <p>本地选品监控工作台 · 数据只存本机</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="runStatus" class="pill">连接中…</span>
+    <span id="nextRun" class="muted small"></span>
+    <button id="btnCollect" class="btn primary">立即采集</button>
+    <button id="btnExport" class="btn ghost">导出 CSV</button>
+    <button id="btnRefresh" class="btn ghost" title="刷新">↻</button>
+  </div>
+</header>
+
+<div id="demoBanner" class="banner hidden">
+  <strong>演示模式</strong>：当前是内置的示例商品与快照，用来验证「采集 → 相邻快照差值 → 爆品值/商品价值」全链路。
+  接入真实商品前，请到「设置」清空演示数据。
+  <button id="btnCloseBanner" class="link">知道了</button>
+</div>
+
+<section class="cards">
+  <div class="card"><span class="card-label">监控商品</span><strong id="kProducts">—</strong><span class="card-sub" id="kActive"></span></div>
+  <div class="card"><span class="card-label">今日总增量</span><strong id="kToday">—</strong><span class="card-sub">所有在监控商品的差值之和</span></div>
+  <div class="card"><span class="card-label">模糊销售额</span><strong id="kRevenue">—</strong><span class="card-sub">试算值，不代表真实成交额</span></div>
+  <div class="card"><span class="card-label">需要留意</span><strong id="kAlerts">—</strong><span class="card-sub">异常 / 已下架商品</span></div>
+</section>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="board">竞品看板</button>
+  <button class="tab" data-tab="risk">上架前体检</button>
+  <button class="tab" data-tab="trial">指标试算</button>
+  <button class="tab" data-tab="add">添加商品 / 导入</button>
+  <button class="tab" data-tab="logs">运行日志</button>
+  <button class="tab" data-tab="settings">设置</button>
+</nav>
+
+<main>
+  <!-- 看板 -->
+  <section id="tab-board" class="panel active">
+    <div class="toolbar">
+      <input id="search" class="input" placeholder="搜索商品名称 / 店铺 / ID">
+      <div class="segmented">
+        <button class="seg active" data-sort="goods_value">商品价值 ↓</button>
+        <button class="seg" data-sort="boom_value">爆品值 ↑</button>
+        <button class="seg" data-sort="today_delta">今日增量 ↓</button>
+      </div>
+      <label class="check"><input type="checkbox" id="onlyAction"> 只看可跟进</label>
+      <label class="check"><input type="checkbox" id="onlySafe"> 排除高风险</label>
+      <span class="muted small" id="boardHint">爆品值越小、商品价值越大，越值得先研究；但别只看数</span>
+    </div>
+    <div class="table-wrap">
+      <table id="board">
+        <thead><tr>
+          <th>商品</th><th>分类</th><th class="num">客单价</th><th class="num">累计已售</th>
+          <th class="num">今日增量</th><th class="num">昨日</th><th class="num">上小时</th>
+          <th class="num">连续出单</th><th class="num">爆品值</th><th class="num">商品价值</th>
+          <th class="num">模糊销售额</th><th>研判</th><th>风险</th><th>状态 / 口径</th>
+        </tr></thead>
+        <tbody id="boardBody"></tbody>
+      </table>
+    </div>
+    <p class="footnote">
+      爆品值 = 累计已售 ÷ 今日增量（越小越先看）｜商品价值 = 客单价 × 今日增量 ×（今日增量 ÷ 累计已售）（同类里越大越先关注，不是利润）。
+      缺基线显示「—」，不伪造 0；采集失败不写快照，不会凭空多算销量。
+    </p>
+  </section>
+
+  <!-- 上架前风险体检 -->
+  <section id="tab-risk" class="panel">
+    <div class="risk-banner">
+      <div>
+        <strong>上架前风险排查 · 本地离线</strong>
+        <p id="riskDisclaimer">名单命中不是侵权结论，未命中不代表已获授权；本工具不核验版权归属、销售授权或平台准售状态。</p>
+      </div>
+      <div id="riskVendor" class="risk-vendor">词库状态加载中…</div>
+    </div>
+    <div class="trial-grid">
+      <div class="box">
+        <h2>批量体检</h2>
+        <p class="muted">一行一个商品标题；也可以粘贴 JSON 数组补作品名、品牌、作者、公司。查询全在本机完成，不上传任何内容。</p>
+        <textarea id="riskInput" class="input area" rows="7" placeholder="假期安全教育PPT模板&#10;粉bi公考全套网盘秒发&#10;考研复试自我介绍模板"></textarea>
+        <div class="btn-row">
+          <button id="btnRiskCheck" class="btn primary">体检这些候选</button>
+          <button id="btnRiskAll" class="btn ghost">体检全部监控商品</button>
+          <button id="btnRiskForce" class="btn ghost">强制重查</button>
+        </div>
+        <div class="btn-row">
+          <button id="btnRiskExport" class="btn ghost">导出体检报告 CSV</button>
+          <button id="btnRiskClear" class="btn ghost">清空体检缓存</button>
+        </div>
+        <div id="riskMsg" class="hint-box"></div>
+        <div class="formula" style="margin-top:12px">
+          <div>名单状态：命中 / 近似候选 / 疑似伪装 / 未命中</div>
+          <div>可识别谐音、拼音、首字母、拆字；标题体检覆盖版权名、暗语、违禁词</div>
+          <div>结果按商品 ID 落库，标题与词库没变就复用缓存；换词库自动全量失效</div>
+        </div>
+      </div>
+      <div class="box">
+        <h2>体检结果 <span class="muted small" id="riskSummary"></span></h2>
+        <div id="riskCounts" class="risk-counts"></div>
+        <div class="table-wrap" style="max-height:340px"><table>
+          <thead><tr><th>候选</th><th>名单状态</th><th>处置</th><th>体检</th><th>命中 / 建议</th></tr></thead>
+          <tbody id="riskBody"></tbody>
+        </table></div>
+        <div id="riskDetail" class="risk-detail hidden"></div>
+      </div>
+    </div>
+    <p class="footnote">
+      数据与许可：复用 <code>vendor/risk_checker</code>（yhslgg-arch/xianyu-blacklist，MIT）。
+      词库由网络收集整理，记录的 <code>verification</code> 为 unverified；公司、人物、店铺或作品被收录不表示其违法。
+      详见 <code>vendor/risk_checker/DATA_NOTICE.md</code>。本页所有结论都只是经营思路，不是法律结论。
+    </p>
+  </section>
+
+  <!-- 试算 -->
+  <section id="tab-trial" class="panel">
+    <div class="trial-grid">
+      <div class="box">
+        <h2>指标试算</h2>
+        <p class="muted">不写入数据库。改一个数，立即看两个指标怎么变。</p>
+        <label>客单价（元）<input id="tPrice" class="input" type="number" step="0.1" value="9.9"></label>
+        <label>累计已售（单）<input id="tSold" class="input" type="number" value="2000"></label>
+        <label>今日销量增量（单）<input id="tDelta" class="input" type="number" value="100"></label>
+        <label class="check"><input type="checkbox" id="tPartial"> 这是半日 / 不完整口径</label>
+        <div class="formula">
+          <div>爆品值 = 累计已售 ÷ 今日增量</div>
+          <div>商品价值 = 客单价 × 今日增量 ×（今日增量 ÷ 累计已售）</div>
+          <div>模糊销售额 = 客单价 × 今日增量</div>
+        </div>
+      </div>
+      <div class="box result-box">
+        <h2>结果</h2>
+        <div class="result-row"><span>爆品值</span><strong id="rBoom">—</strong><small>越小越优先看</small></div>
+        <div class="result-row"><span>商品价值</span><strong id="rValue">—</strong><small>同类里越大越先关注</small></div>
+        <div class="result-row"><span>模糊销售额</span><strong id="rRevenue">—</strong><small>不是真实成交额</small></div>
+        <div id="rWarnings" class="warnings"></div>
+        <p class="muted small" id="rNote"></p>
+        <div class="preset">
+          <span class="muted small">对照文章里的例子：</span>
+          <button class="btn tiny" data-preset="2000,100,9.9">累计 2000 / 今日 +100</button>
+          <button class="btn tiny" data-preset="10000,100,9.9">累计 10000 / 今日 +100</button>
+          <button class="btn tiny" data-preset="420,1,6">累计 420 / 今日 +1</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 添加 -->
+  <section id="tab-add" class="panel">
+    <div class="trial-grid">
+      <div class="box">
+        <h2>添加商品到监控队列</h2>
+        <p class="muted">一行一个，支持完整商品链接、<code>xhslink.com</code> 短链、分享口令整段文字、24 位商品 ID，可混合。</p>
+        <textarea id="addText" class="input area" rows="6" placeholder="https://www.xiaohongshu.com/goods-detail/24位ID&#10;https://xhslink.com/a/xxxxx&#10;66a1b2c3d4e5f60718293a4b"></textarea>
+        <div class="form-row">
+          <label>分类<input id="addCategory" class="input" placeholder="如：教师资料"></label>
+          <label>客单价<input id="addPrice" class="input" type="number" step="0.1" placeholder="可留空"></label>
+          <label>数据源<select id="addSource" class="input">
+            <option value="demo">演示数据（先跑通口径）</option>
+            <option value="direct">轻量接口直采</option>
+            <option value="plugin">浏览器插件推送</option>
+          </select></label>
+        </div>
+        <div class="btn-row">
+          <button id="btnAdd" class="btn primary">加入监控</button>
+          <button id="btnProbe" class="btn ghost">只解析并试采（不落库）</button>
+        </div>
+        <div id="addResult" class="hint-box"></div>
+      </div>
+      <div class="box">
+        <h2>导入选品表 CSV</h2>
+        <p class="muted">文章里的飞书多维表需要登录才能导出。导出成 CSV 后粘进来即可；没有 24 位 ID 的行会用标题生成内部 ID。</p>
+        <textarea id="csvText" class="input area" rows="6" placeholder="商品名称,商品链接,分类,客单价,笔记数,竞争家数,时间节点,店铺"></textarea>
+        <div class="btn-row">
+          <button id="btnImport" class="btn primary">导入</button>
+          <button id="btnTemplate" class="btn ghost">填入模板</button>
+        </div>
+        <h3 style="margin-top:24px">浏览器插件 / 书签推送</h3>
+        <p class="muted small">对应文章最后那段：在商品页点一下「加入监控队列」，把链接 POST 给本地服务；带上销量时按同一口径落快照。</p>
+        <pre class="code">curl -X POST http://127.0.0.1:8777/api/ingest \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"商品链接","title":"名称","sold":"已售2210","price":9.9}'</pre>
+        <p class="muted small">只传 <code>url</code> = 加入队列；多传 <code>sold</code> = 顺手写一条快照。完整油猴脚本见 <code>tools/加入监控队列.user.js</code>。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 日志 -->
+  <section id="tab-logs" class="panel">
+    <div class="toolbar">
+      <div class="segmented">
+        <button class="seg active" data-level="all">全部</button>
+        <button class="seg" data-level="success">成功</button>
+        <button class="seg" data-level="warn">警告</button>
+        <button class="seg" data-level="error">失败</button>
+        <button class="seg" data-level="info">信息</button>
+      </div>
+      <button id="btnClearLogs" class="btn ghost">清空日志</button>
+    </div>
+    <div class="table-wrap short"><table>
+      <thead><tr><th>时间</th><th>级别</th><th>来源</th><th>商品</th><th>内容</th></tr></thead>
+      <tbody id="logsBody"></tbody>
+    </table></div>
+  </section>
+
+  <!-- 设置 -->
+  <section id="tab-settings" class="panel">
+    <div class="trial-grid">
+      <div class="box">
+        <h2>监控设置</h2>
+        <label>采集周期（分钟）<input id="sInterval" class="input" type="number" min="1" value="60"></label>
+        <p class="muted small">按自然整点调度：09:35 启动、周期 60 分钟，第一次正式采集是 10:00。</p>
+        <label>新商品默认数据源<select id="sSource" class="input">
+          <option value="demo">演示数据</option><option value="direct">轻量接口直采</option>
+          <option value="plugin">浏览器插件推送</option></select></label>
+        <label>自定义采集命令（可选，等价于浏览器兜底）<input id="sCommand" class="input" placeholder="如：python3 my_playwright.py {item_id}"></label>
+        <p class="muted small">命令 stdout 输出 JSON 即可，支持扁平结构或接口原始响应；失败会明确记录，不会写假快照。</p>
+        <h3 style="margin-top:20px">采集时报推送</h3>
+        <div class="form-row">
+          <label>类型<select id="sNotifyType" class="input"><option value="wecom">企业微信</option><option value="feishu">飞书</option></select></label>
+          <label>Webhook<input id="sWebhook" class="input" type="password" placeholder="https://..."></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sNotifyEnabled"> 启用推送</label>
+        <div class="btn-row"><button id="btnSaveConfig" class="btn primary">保存设置</button></div>
+        <div id="configResult" class="hint-box"></div>
+      </div>
+      <div class="box">
+        <h2>数据与维护</h2>
+        <p class="muted small" id="dbInfo"></p>
+        <div class="btn-row">
+          <button id="btnResetDemo" class="btn ghost">清空演示数据</button>
+          <button id="btnCleanup" class="btn ghost">清理 90 天前快照</button>
+        </div>
+        <h3 style="margin-top:24px">给 AI 读数据的只读 MCP</h3>
+        <p class="muted small">把下面这段交给 AI 助手，它就能直接查本机看板（只读，不能改数据）。</p>
+        <pre class="code" id="mcpText">加载中…</pre>
+        <h3 style="margin-top:20px">改成网站版</h3>
+        <p class="muted small">文章里说的「本地采集 + 同步到服务器 + 网站 UI」，本工作台已经把 Web UI 做在了本地服务上。
+          若要在手机/外网看：把 <code>/api/export</code> 的结果或 <code>/api/ingest</code> 的推送转发到你自己的服务器，
+          再让那台服务器渲染即可，采集仍然留在本地电脑（需要登录态的那部分不要搬到服务器）。</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- 商品详情 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div><h2 id="mTitle">—</h2><p class="muted small" id="mSub"></p></div>
+      <button id="btnCloseModal" class="btn ghost">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-metrics" id="mMetrics"></div>
+      <div id="mRisk" class="risk-inline"></div>
+      <div class="charts">
+        <div class="chart-box"><h3>今日每小时销量增量</h3><div id="chartHour"></div></div>
+        <div class="chart-box"><h3>近 7 天每日增量</h3><div id="chartDay"></div></div>
+      </div>
+      <div class="research">
+        <h3>选品研判清单 <span class="muted small">（文章里的 7 条，勾选后会保存）</span></h3>
+        <div id="researchList"></div>
+        <button id="btnSaveResearch" class="btn primary">保存研判与字段</button>
+      </div>
+      <div class="detail-form">
+        <h3>人工补充信息</h3>
+        <div class="form-row">
+          <label>客单价<input id="mPrice" class="input" type="number" step="0.1"></label>
+          <label>笔记数<input id="mNotes" class="input" type="number"></label>
+          <label>竞争家数<input id="mCompetitors" class="input" type="number"></label>
+          <label>时间节点<input id="mSeason" class="input" placeholder="开学 / 年终 / 毕业季"></label>
+        </div>
+        <p class="muted small">①做了多久、②发了几篇笔记、⑥多少人在做，都靠这些人工线索，别只靠一条除法下结论。</p>
+      </div>
+      <div class="snapshot-box">
+        <h3>最近快照 <span class="muted small">（灰色 = 读数不精确，不参与计算）</span></h3>
+        <div id="snapList" class="snap-list"></div>
+      </div>
+      <div class="btn-row">
+        <button id="btnToggleActive" class="btn ghost">暂停 / 恢复监控</button>
+        <button id="btnDeleteProduct" class="btn danger">删除商品及历史</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/app.js"></script>
+</body>
+</html>

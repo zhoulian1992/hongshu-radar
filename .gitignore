@@ -1,0 +1,20 @@
+# 本机运行数据 / 缓存
+data/
+*.db
+*.db-wal
+*.db-shm
+__pycache__/
+*.py[cod]
+.DS_Store
+.workbuddy/
+
+# 本机配置（含 webhook 等私有信息），用 config.example.json 复制
+config.json
+
+# 第三方风险名单：不在本仓库二次分发，请用 tools/fetch_risk_data.py 获取
+vendor/risk_checker/assets/risk-names.json
+vendor/risk_checker/assets/*.local.json
+vendor/risk_checker/local-data/
+
+# 发布稿（仅本地交付，不随仓库发布）
+X发布帖.md
